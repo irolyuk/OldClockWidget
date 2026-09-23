@@ -10,6 +10,7 @@ py -m PyInstaller ^
   --windowed ^
   --onefile ^
   --name OldClockWidget ^
+  --icon "assets\icon.ico" ^
   --add-data "clock_font.json;." ^
   main.py
 

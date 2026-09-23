@@ -104,7 +104,7 @@ build.bat
 dist\OldClockWidget.exe
 ```
 
-`clock_font.json` автоматично додається всередину збірки.
+`clock_font.json` автоматично додається всередину збірки. Іконка програми береться з `assets/icon.ico`.
 
 ## 💾 Збереження налаштувань
 
@@ -124,7 +124,9 @@ Application: OldClockWidget
 ```text
 OldClockWidget/
 ├── assets/
-│   └── old-clock-widget.png
+│   ├── old-clock-widget.png
+│   ├── icon.png
+│   └── icon.ico
 ├── main.py
 ├── clock_font.json
 ├── requirements.txt
@@ -224,7 +226,7 @@ Output:
 dist\OldClockWidget.exe
 ```
 
-`clock_font.json` is bundled automatically.
+`clock_font.json` is bundled automatically. The executable icon is loaded from `assets/icon.ico`.
 
 ## 💾 Persistent settings
 
@@ -244,7 +246,9 @@ The **Start with Windows** option uses the current user's Windows Run registry k
 ```text
 OldClockWidget/
 ├── assets/
-│   └── old-clock-widget.png
+│   ├── old-clock-widget.png
+│   ├── icon.png
+│   └── icon.ico
 ├── main.py
 ├── clock_font.json
 ├── requirements.txt
