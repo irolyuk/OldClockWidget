@@ -10,13 +10,28 @@
 
 <br>
 
-`Windows 10/11` · `Python` · `PySide6` · `PyInstaller`
+`Windows 10/11` · `v1.0.0` · `MIT License`
+
+[**📥 Releases**](https://github.com/irolyuk/OldClockWidget/releases) · [**Source code**](https://github.com/irolyuk/OldClockWidget)
+
 
 </div>
 
 ---
 
 # 🇺🇦 Українська
+
+## 📥 Завантаження
+
+Для звичайного використання **Python не потрібен**.
+
+1. Відкрий [**GitHub Releases**](https://github.com/irolyuk/OldClockWidget/releases).
+2. Обери **v1.0.0**.
+3. Завантаж `OldClockWidget.exe`.
+4. Запусти файл — встановлення не потрібне.
+
+> **Актуальна версія: v1.0.0**
+
 
 **OldClockWidget** — легкий настільний віджет-годинник для Windows у стилі старого LED-дисплея.  
 Він використовує власний dot-matrix шрифт, підтримує малювання прямо на LED-матриці та працює без зайвих елементів інтерфейсу.
@@ -64,7 +79,7 @@
 | `Reset size` | Повернути стандартний розмір |
 | `Exit` | Зберегти стан і закрити |
 
-## 🚀 Запуск із вихідного коду
+## 🧑‍💻 Запуск із вихідного коду
 
 Потрібні **Windows 10/11** та **Python 3**.
 
@@ -140,6 +155,18 @@ OldClockWidget/
 
 # English
 
+## 📥 Download
+
+For normal use, **Python is not required**.
+
+1. Open [**GitHub Releases**](https://github.com/irolyuk/OldClockWidget/releases).
+2. Select **v1.0.0**.
+3. Download `OldClockWidget.exe`.
+4. Run it — no installation is required.
+
+> **Current release: v1.0.0**
+
+
 **OldClockWidget** is a lightweight LED-style desktop clock widget for Windows.  
 It uses a custom dot-matrix font, supports drawing directly on the LED matrix, and keeps the desktop experience clean and minimal.
 
@@ -186,7 +213,7 @@ The widget has **no taskbar button and no system tray icon** — only the clock 
 | `Reset size` | Restore default size |
 | `Exit` | Save state and close |
 
-## 🚀 Run from source
+## 🧑‍💻 Run from source
 
 Requires **Windows 10/11** and **Python 3**.
 
