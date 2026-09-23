@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, QPoint
+from PySide6.QtCore import Qt, QTimer, QPoint, QSettings
 from PySide6.QtGui import QColor, QPainter, QAction, QFont
 from PySide6.QtWidgets import QApplication, QWidget, QMenu, QSizeGrip
 
@@ -66,12 +66,14 @@ class OldClockWidget(QWidget):
         self.signature_visible = True
         self.draw_mode = False
         self.erase_mode = False
+        self.settings = QSettings("IvanRoliuk", "OldClockWidget")
 
         self.setWindowTitle("Old Clock")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setMinimumSize(310, 88)
         self.resize(self.BASE_DRAW_W, self.BASE_H)
+        self.load_settings()
 
         self.grip = QSizeGrip(self)
         self.grip.resize(18, 18)
@@ -79,6 +81,48 @@ class OldClockWidget(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(200)
+
+    def load_settings(self):
+        self.panel_visible = self.settings.value("panel_visible", True, type=bool)
+        self.signature_visible = self.settings.value("signature_visible", True, type=bool)
+        self.current_color = self.settings.value("current_color", "Green", type=str)
+        if self.current_color not in self.COLORS:
+            self.current_color = "Green"
+
+        size = self.settings.value("window_size")
+        pos = self.settings.value("window_pos")
+        if size is not None:
+            self.resize(size)
+        if pos is not None:
+            self.move(pos)
+
+        raw = self.settings.value("drawing", "[]", type=str)
+        try:
+            saved = json.loads(raw)
+            self.user_leds = {
+                (float(item["x"]), float(item["y"])): item["color"]
+                for item in saved
+                if item.get("color") in self.COLORS
+            }
+        except (json.JSONDecodeError, TypeError, KeyError, ValueError):
+            self.user_leds = {}
+
+    def save_settings(self):
+        self.settings.setValue("panel_visible", self.panel_visible)
+        self.settings.setValue("signature_visible", self.signature_visible)
+        self.settings.setValue("current_color", self.current_color)
+        self.settings.setValue("window_size", self.size())
+        self.settings.setValue("window_pos", self.pos())
+        drawing = [
+            {"x": x, "y": y, "color": color}
+            for (x, y), color in self.user_leds.items()
+        ]
+        self.settings.setValue("drawing", json.dumps(drawing))
+        self.settings.sync()
+
+    def closeEvent(self, event):
+        self.save_settings()
+        super().closeEvent(event)
 
     def slot_width(self, ch):
         return self.COLON_SLOT if ch == ":" else self.DIGIT_SLOT
@@ -245,6 +289,7 @@ class OldClockWidget(QWidget):
             self.user_leds.pop(led, None)
         else:
             self.user_leds[led] = self.current_color
+        self.save_settings()
         self.update()
         return True
 
@@ -262,6 +307,7 @@ class OldClockWidget(QWidget):
             self.resize(max(self.BASE_DRAW_W, int(old_w / max(ratio, .1))), self.height())
         else:
             self.resize(max(self.minimumWidth(), int(old_w * ratio)), self.height())
+        self.save_settings()
         self.update()
 
     def mousePressEvent(self, event):
@@ -311,6 +357,7 @@ class OldClockWidget(QWidget):
         signature_action.setChecked(self.signature_visible)
         def toggle_signature(checked):
             self.signature_visible = checked
+            self.save_settings()
             self.update()
         signature_action.toggled.connect(toggle_signature)
         menu.addAction(signature_action)
@@ -320,11 +367,18 @@ class OldClockWidget(QWidget):
             action = QAction(name, self)
             action.setCheckable(True)
             action.setChecked(name == self.current_color)
-            action.triggered.connect(lambda checked=False, n=name: setattr(self, "current_color", n))
+            def choose_color(checked=False, n=name):
+                self.current_color = n
+                self.save_settings()
+            action.triggered.connect(choose_color)
             color_menu.addAction(action)
 
         clear = QAction("Clear drawing", self)
-        clear.triggered.connect(lambda: (self.user_leds.clear(), self.update()))
+        def clear_drawing():
+            self.user_leds.clear()
+            self.save_settings()
+            self.update()
+        clear.triggered.connect(clear_drawing)
         menu.addAction(clear)
 
         menu.addSeparator()
@@ -349,7 +403,10 @@ class OldClockWidget(QWidget):
 
         menu.addSeparator()
         quit_action = QAction("Exit", self)
-        quit_action.triggered.connect(QApplication.quit)
+        def quit_app():
+            self.save_settings()
+            QApplication.quit()
+        quit_action.triggered.connect(quit_app)
         menu.addAction(quit_action)
 
         menu.exec(pos)
