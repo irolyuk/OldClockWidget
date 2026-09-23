@@ -1,5 +1,6 @@
 import sys
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 
@@ -11,6 +12,51 @@ from PySide6.QtWidgets import QApplication, QWidget, QMenu, QSizeGrip
 def resource_path(name: str) -> Path:
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     return base / name
+
+
+def startup_command() -> str:
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    exe = pythonw if pythonw.exists() else Path(sys.executable)
+    return f'"{exe}" "{Path(__file__).resolve()}"'
+
+
+def is_autostart_enabled() -> bool:
+    if sys.platform != "win32":
+        return False
+    import winreg
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0,
+            winreg.KEY_READ,
+        ) as key:
+            value, _ = winreg.QueryValueEx(key, "OldClockWidget")
+            return value == startup_command()
+    except OSError:
+        return False
+
+
+def set_autostart(enabled: bool):
+    if sys.platform != "win32":
+        return
+    import winreg
+    path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+    with winreg.OpenKey(
+        winreg.HKEY_CURRENT_USER,
+        path,
+        0,
+        winreg.KEY_SET_VALUE,
+    ) as key:
+        if enabled:
+            winreg.SetValueEx(key, "OldClockWidget", 0, winreg.REG_SZ, startup_command())
+        else:
+            try:
+                winreg.DeleteValue(key, "OldClockWidget")
+            except FileNotFoundError:
+                pass
 
 
 class OldClockWidget(QWidget):
@@ -64,6 +110,7 @@ class OldClockWidget(QWidget):
         self.current_color = "Green"
         self.panel_visible = True
         self.signature_visible = True
+        self.locked = False
         self.draw_mode = False
         self.erase_mode = False
         self.settings = QSettings("IvanRoliuk", "OldClockWidget")
@@ -77,14 +124,17 @@ class OldClockWidget(QWidget):
 
         self.grip = QSizeGrip(self)
         self.grip.resize(18, 18)
+        self.grip.setVisible(not self.locked)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(200)
 
+
     def load_settings(self):
         self.panel_visible = self.settings.value("panel_visible", True, type=bool)
         self.signature_visible = self.settings.value("signature_visible", True, type=bool)
+        self.locked = self.settings.value("locked", False, type=bool)
         self.current_color = self.settings.value("current_color", "Green", type=str)
         if self.current_color not in self.COLORS:
             self.current_color = "Green"
@@ -110,6 +160,7 @@ class OldClockWidget(QWidget):
     def save_settings(self):
         self.settings.setValue("panel_visible", self.panel_visible)
         self.settings.setValue("signature_visible", self.signature_visible)
+        self.settings.setValue("locked", self.locked)
         self.settings.setValue("current_color", self.current_color)
         self.settings.setValue("window_size", self.size())
         self.settings.setValue("window_pos", self.pos())
@@ -231,10 +282,16 @@ class OldClockWidget(QWidget):
             cursor += slot + self.GAP
 
         # Independent multicolor drawing.
-        if self.panel_visible:
-            for (x, y), color_name in self.user_leds.items():
-                color = self.COLORS.get(color_name, self.COLORS["Green"])
-                self.paint_led(p, x, y, scale, ox, oy, color)
+        # Clock-border drawings stay visible even when the side drawing
+        # panel is hidden. Only LEDs belonging to the side panel disappear.
+        draw_start = self.drawing_start()
+        draw_end = draw_start + self.DRAW_WIDTH
+        for (x, y), color_name in self.user_leds.items():
+            is_side_panel_led = draw_start <= x <= draw_end and 0.0 <= y <= 46.0
+            if is_side_panel_led and not self.panel_visible:
+                continue
+            color = self.COLORS.get(color_name, self.COLORS["Green"])
+            self.paint_led(p, x, y, scale, ox, oy, color)
 
         # Small creator signature under the clock, bottom-left.
         # Kept subtle so it feels like part of the display rather than UI chrome.
@@ -262,14 +319,42 @@ class OldClockWidget(QWidget):
         return self.MATRIX_PAD_X + self.clock_width() + self.DRAW_GAP
 
     def screen_to_led(self, pos):
-        if not self.panel_visible:
-            return None
         scale, ox, oy = self.layout_values()
         lx = (pos.x()-ox)/scale
         ly = 46.0 - (((pos.y()-oy-self.MATRIX_PAD_TOP*scale)/scale) - 1.0)
-        start = self.drawing_start()
-        if lx < start or lx > start+self.DRAW_WIDTH or ly < 0 or ly > 46:
+
+        # Drawing is allowed only in:
+        # 1) the dedicated drawing panel;
+        # 2) the padding immediately around the clock.
+        # The rectangular clock/time area itself is completely protected.
+        clock_left = self.MATRIX_PAD_X
+        clock_right = self.MATRIX_PAD_X + self.clock_width()
+        clock_bottom = 0.0
+        clock_top = 46.0
+
+        in_clock_padding = (
+            0.0 <= lx <= clock_right + self.MATRIX_PAD_X
+            and -self.MATRIX_PAD_BOTTOM <= ly <= 46.0 + self.MATRIX_PAD_TOP
+            and not (
+                clock_left <= lx <= clock_right
+                and clock_bottom <= ly <= clock_top
+            )
+        )
+
+        draw_start = self.drawing_start()
+        in_drawing_panel = (
+            self.panel_visible
+            and draw_start <= lx <= draw_start + self.DRAW_WIDTH
+            and 0.0 <= ly <= 46.0
+        )
+
+        if not (in_clock_padding or in_drawing_panel):
             return None
+
+        min_x = 0.0
+        max_x = self.total_logical_width()
+        min_y = -self.MATRIX_PAD_BOTTOM
+        max_y = 46.0 + self.MATRIX_PAD_TOP
 
         col = round(lx/2.0)
         x = col*2.0
@@ -277,8 +362,40 @@ class OldClockWidget(QWidget):
         row = round((ly-y0)/4.0)
         y = y0 + row*4.0
 
-        if x < start or x > start+self.DRAW_WIDTH or y < 0 or y > 46:
+        if x < min_x or x > max_x or y < min_y or y > max_y:
             return None
+
+        snapped_in_clock_padding = (
+            0.0 <= x <= clock_right + self.MATRIX_PAD_X
+            and -self.MATRIX_PAD_BOTTOM <= y <= 46.0 + self.MATRIX_PAD_TOP
+            and not (
+                clock_left <= x <= clock_right
+                and clock_bottom <= y <= clock_top
+            )
+        )
+        snapped_in_drawing_panel = (
+            self.panel_visible
+            and draw_start <= x <= draw_start + self.DRAW_WIDTH
+            and 0.0 <= y <= 46.0
+        )
+        if not (snapped_in_clock_padding or snapped_in_drawing_panel):
+            return None
+
+        # Extra safety: active clock LEDs are never paintable.
+        cursor = self.MATRIX_PAD_X
+        active_clock_leds = set()
+        for ch in self.current_text:
+            glyph = self.font[ch]
+            aw = float(glyph["width"])
+            slot = self.slot_width(ch)
+            gx = cursor + (slot-aw)/2.0
+            for px, py in glyph["points"]:
+                active_clock_leds.add((gx+float(px), float(py)))
+            cursor += slot + self.GAP
+
+        if (x, y) in active_clock_leds:
+            return None
+
         return (x, y)
 
     def apply_draw(self, pos, erase=False):
@@ -312,15 +429,16 @@ class OldClockWidget(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            if self.grip.geometry().contains(event.position().toPoint()):
+            if not self.locked and self.grip.geometry().contains(event.position().toPoint()):
                 return
             if self.apply_draw(event.position(), False):
                 self.draw_mode = True
                 event.accept()
                 return
-            self.dragging = True
-            self.drag_offset = event.globalPosition().toPoint()-self.frameGeometry().topLeft()
-            event.accept()
+            if not self.locked:
+                self.dragging = True
+                self.drag_offset = event.globalPosition().toPoint()-self.frameGeometry().topLeft()
+                event.accept()
         elif event.button() == Qt.RightButton:
             if self.apply_draw(event.position(), True):
                 self.erase_mode = True
@@ -362,6 +480,17 @@ class OldClockWidget(QWidget):
         signature_action.toggled.connect(toggle_signature)
         menu.addAction(signature_action)
 
+        lock_action = QAction("Lock", self)
+        lock_action.setCheckable(True)
+        lock_action.setChecked(self.locked)
+        def toggle_lock(checked):
+            self.locked = checked
+            self.grip.setVisible(not checked)
+            self.save_settings()
+            self.update()
+        lock_action.toggled.connect(toggle_lock)
+        menu.addAction(lock_action)
+
         color_menu = menu.addMenu("Drawing color")
         for name, color in self.COLORS.items():
             action = QAction(name, self)
@@ -394,7 +523,14 @@ class OldClockWidget(QWidget):
         top.toggled.connect(toggle_top)
         menu.addAction(top)
 
+        autostart = QAction("Start with Windows", self)
+        autostart.setCheckable(True)
+        autostart.setChecked(is_autostart_enabled())
+        autostart.toggled.connect(set_autostart)
+        menu.addAction(autostart)
+
         reset = QAction("Reset size", self)
+        reset.setEnabled(not self.locked)
         reset.triggered.connect(lambda: self.resize(
             self.BASE_DRAW_W if self.panel_visible else self.BASE_CLOCK_W,
             self.BASE_H
